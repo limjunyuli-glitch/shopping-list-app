@@ -174,8 +174,12 @@
     <div class="empty" id="emptyMsg" style="display:none;">쇼핑 리스트가 비어 있습니다.</div>
   </div>
 
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
-  const STORAGE_KEY = 'shopping-list-items';
+  const SUPABASE_URL = 'https://pfebjhdshichsbpevxlj.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_p88r5IFjlalD9yAAgEAIbA__vHxsH2K';
+  const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
   const itemInput = document.getElementById('itemInput');
   const addBtn = document.getElementById('addBtn');
   const listEl = document.getElementById('list');
@@ -183,19 +187,18 @@
   const countLabel = document.getElementById('countLabel');
   const clearCheckedBtn = document.getElementById('clearCheckedBtn');
 
-  let items = loadItems();
+  let items = [];
 
-  function loadItems() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
+  async function loadItems() {
+    const { data, error } = await db
+      .from('shopping_items')
+      .select('*')
+      .order('created_at', { ascending: true });
+    if (error) {
+      console.error('Failed to load items:', error);
+      return;
     }
-  }
-
-  function saveItems() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    items = data;
   }
 
   function render() {
@@ -227,33 +230,56 @@
     }
   }
 
-  function addItem() {
+  async function addItem() {
     const text = itemInput.value.trim();
     if (!text) return;
-    items.push({ id: Date.now() + Math.random(), text, checked: false });
     itemInput.value = '';
-    saveItems();
+    const { data, error } = await db
+      .from('shopping_items')
+      .insert({ text, checked: false })
+      .select()
+      .single();
+    if (error) {
+      console.error('Failed to add item:', error);
+      return;
+    }
+    items.push(data);
     render();
     itemInput.focus();
   }
 
-  function toggleItem(id) {
+  async function toggleItem(id) {
     const item = items.find(i => i.id === id);
-    if (item) item.checked = !item.checked;
-    saveItems();
+    if (!item) return;
+    item.checked = !item.checked;
     render();
+    const { error } = await db
+      .from('shopping_items')
+      .update({ checked: item.checked })
+      .eq('id', id);
+    if (error) console.error('Failed to update item:', error);
   }
 
-  function deleteItem(id) {
+  async function deleteItem(id) {
     items = items.filter(i => i.id !== id);
-    saveItems();
     render();
+    const { error } = await db
+      .from('shopping_items')
+      .delete()
+      .eq('id', id);
+    if (error) console.error('Failed to delete item:', error);
   }
 
-  function clearChecked() {
+  async function clearChecked() {
+    const checkedIds = items.filter(i => i.checked).map(i => i.id);
     items = items.filter(i => !i.checked);
-    saveItems();
     render();
+    if (checkedIds.length === 0) return;
+    const { error } = await db
+      .from('shopping_items')
+      .delete()
+      .in('id', checkedIds);
+    if (error) console.error('Failed to clear checked items:', error);
   }
 
   addBtn.addEventListener('click', addItem);
@@ -262,7 +288,7 @@
   });
   clearCheckedBtn.addEventListener('click', clearChecked);
 
-  render();
+  loadItems().then(render);
 </script>
 </body>
 </html>
